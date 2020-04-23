@@ -56,28 +56,6 @@ M=D
 @SP
 M=M+1
 
-// lt gt
-@SP
-A=M
-A=A-1
-D=M
-A=A-1
-D=M-D
-@LESSER
-D;JLT
-D=0
-@ELSE
-0;JMP
-(LESSER)
-D=-1
-(ELSE)
-@SP
-A=M-1
-A=A-1
-M=D
-@SP
-M=M-1
-
 // lt
 @SP
 A=M
