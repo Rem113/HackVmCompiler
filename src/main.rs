@@ -477,7 +477,7 @@ fn compile_binary_operation(operator: BinaryArithmeticOperator) -> String {
     result.push_str("@SP\n");
     result.push_str("A=M-1\n");
     result.push_str("D=M\n");
-    // Point M to the x
+    // Point M to x
     result.push_str("A=A-1\n");
     // Perform operation and store the result (x op y)
     result.push_str(&format!("M=M{}D\n", op));
@@ -506,7 +506,6 @@ fn compile_boolean_operation(index: usize, operator: BooleanOperator) -> String 
     // Store diff in D (D = x - y)
     result.push_str("D=M-D\n");
     result.push_str(&format!("@TRUE{}\n", index));
-
     // Jump to TRUE if x op y is true
     result.push_str(&format!("D;{}\n", op));
     // Set result (D) to zero (false)
