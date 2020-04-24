@@ -28,8 +28,14 @@ fn compile_file(input_file_path: &Path, output_file_path: &Path) {
     let mut errors = Vec::new();
 
     for (index, line) in lines.iter().enumerate() {
-        let comment_line = format!("// {}\n", line.clone());
-        let compiled_line = compile_line(index, line.clone(), input_file_name.clone());
+        let trimmed = line.trim();
+
+        if trimmed.len() == 0 {
+            continue;
+        };
+
+        let comment_line = format!("// {}\n", trimmed.clone());
+        let compiled_line = compile_line(index, trimmed.to_string(), input_file_name.clone());
 
         match compiled_line {
             Ok(val) => output.push(format!("{}{}\n", comment_line, val)),
@@ -76,13 +82,7 @@ fn print_errors(errors: &Vec<String>) {
 }
 
 fn compile_line(index: usize, line: String, file_name: String) -> Result<String, String> {
-    let trimmed = line.trim();
-
-    if trimmed.len() == 0 {
-        return Ok(String::new());
-    }
-
-    let fragments: Vec<&str> = trimmed.split(" ").collect();
+    let fragments: Vec<&str> = line.split(" ").collect();
 
     let args = &fragments[1..];
 
@@ -98,7 +98,7 @@ fn compile_line(index: usize, line: String, file_name: String) -> Result<String,
         "and" => compile_and(args),
         "or" => compile_or(args),
         "not" => compile_not(args),
-        _ => Ok(line),
+        otherwise => Err(format!("Unsupported operation: {}", otherwise)),
     }
 }
 

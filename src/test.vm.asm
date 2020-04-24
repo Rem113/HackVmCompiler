@@ -37,15 +37,6 @@ M=D
 @SP
 M=M-1
 
-// push constant 6
-@6
-D=A
-@SP
-A=M
-M=D
-@SP
-M=M+1
-
 // push constant 7
 @7
 D=A
@@ -61,14 +52,14 @@ A=M-1
 D=M
 A=A-1
 D=M-D
-@TRUE5
+@TRUE8
 D;JLT
 D=0
-@ELSE5
+@ELSE8
 0;JMP
-(TRUE5)
+(TRUE8)
 D=-1
-(ELSE5)
+(ELSE8)
 @SP
 A=M-1
 A=A-1
