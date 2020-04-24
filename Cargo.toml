@@ -1,5 +1,5 @@
 [package]
-name = "ex1"
+name = "vmcomp"
 version = "0.1.0"
 authors = ["Hillel Saal <remi.saal@gmail.com>"]
 edition = "2018"

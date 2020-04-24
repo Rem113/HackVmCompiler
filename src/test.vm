@@ -1,11 +1,7 @@
 push constant 5
-push constant 4
-gt
-push constant 2
-push constant 3
-push
-push temp 18
-pop
-lt gt
+push constant 6
+eq
+push constant 6
+push constant 7
 lt
 and

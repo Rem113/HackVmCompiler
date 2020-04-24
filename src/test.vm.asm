@@ -7,8 +7,8 @@ M=D
 @SP
 M=M+1
 
-// push constant 4
-@4
+// push constant 6
+@6
 D=A
 @SP
 A=M
@@ -16,21 +16,20 @@ M=D
 @SP
 M=M+1
 
-// gt
+// eq
 @SP
-A=M
-A=A-1
+A=M-1
 D=M
 A=A-1
 D=M-D
-@GREATER
-D;JGT
+@TRUE2
+D;JEQ
 D=0
-@ELSE
+@ELSE2
 0;JMP
-(GREATER)
+(TRUE2)
 D=-1
-(ELSE)
+(ELSE2)
 @SP
 A=M-1
 A=A-1
@@ -38,8 +37,8 @@ M=D
 @SP
 M=M-1
 
-// push constant 2
-@2
+// push constant 6
+@6
 D=A
 @SP
 A=M
@@ -47,8 +46,8 @@ M=D
 @SP
 M=M+1
 
-// push constant 3
-@3
+// push constant 7
+@7
 D=A
 @SP
 A=M
@@ -58,19 +57,18 @@ M=M+1
 
 // lt
 @SP
-A=M
-A=A-1
+A=M-1
 D=M
 A=A-1
 D=M-D
-@LESSER
+@TRUE5
 D;JLT
 D=0
-@ELSE
+@ELSE5
 0;JMP
-(LESSER)
+(TRUE5)
 D=-1
-(ELSE)
+(ELSE5)
 @SP
 A=M-1
 A=A-1
