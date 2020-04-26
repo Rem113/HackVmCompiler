@@ -17,6 +17,12 @@ enum BooleanOperator {
     Equal,
 }
 
+const SP: usize = 256;
+const LCL: usize = 512;
+const ARG: usize = 768;
+const THIS: usize = 1024;
+const THAT: usize = 1280;
+
 fn compile_file(input_file_path: &Path, output_file_path: &Path) {
     let lines = read_lines(input_file_path);
     let input_file_name = match input_file_path.file_name() {
@@ -26,6 +32,10 @@ fn compile_file(input_file_path: &Path, output_file_path: &Path) {
 
     let mut output = Vec::new();
     let mut errors = Vec::new();
+
+    output.push(String::from("// Initialization code\n"));
+    output.push(gen_init_code());
+    output.push(String::from("\n"));
 
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -139,7 +149,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
             result.push_str("A=M+D\n");
             result.push_str("D=M\n");
 
-            result.push_str(&push_to_sp_and_inc());
+            result.push_str(&gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -160,7 +170,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
             result.push_str(&format!("@{}\n", value));
             result.push_str("D=M\n");
             
-            result.push_str(&push_to_sp_and_inc());
+            result.push_str(&gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -176,7 +186,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
             result.push_str(&format!("@{}.{}\n", class_name, arg));
             result.push_str("D=M\n");
             
-            result.push_str(&push_to_sp_and_inc());
+            result.push_str(&gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -196,7 +206,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
             result.push_str(&format!("@{}\n", this_or_that));
             result.push_str("D=M\n");
 
-            result.push_str(&push_to_sp_and_inc());
+            result.push_str(&gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -208,7 +218,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
             result.push_str(&format!("@{}\n", arg));
             result.push_str("D=A\n");
             
-            result.push_str(&push_to_sp_and_inc());
+            result.push_str(&gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -528,7 +538,7 @@ fn compile_boolean_operation(index: usize, operator: BooleanOperator) -> String 
     result
 }
 
-fn push_to_sp_and_inc() -> String {
+fn gen_push_to_sp_and_inc() -> String {
     let mut result = String::new();
 
     // Write to stack pointer
@@ -538,6 +548,38 @@ fn push_to_sp_and_inc() -> String {
     // Increment stack pointer
     result.push_str("@SP\n");
     result.push_str("M=M+1\n");
+
+    result
+}
+
+fn gen_init_code() -> String {
+    let mut result = String::new();
+
+    // Set SP
+    result.push_str(&format!("@{}\n", SP));
+    result.push_str("D=A\n");
+    result.push_str("@SP\n");
+    result.push_str("M=D\n");
+    // Set LCL
+    result.push_str(&format!("@{}\n", LCL));
+    result.push_str("D=A\n");
+    result.push_str("@LCL\n");
+    result.push_str("M=D\n");
+    // Set ARG
+    result.push_str(&format!("@{}\n", ARG));
+    result.push_str("D=A\n");
+    result.push_str("@ARG\n");
+    result.push_str("M=D\n");
+    // Set THIS
+    result.push_str(&format!("@{}\n", THIS));
+    result.push_str("D=A\n");
+    result.push_str("@THIS\n");
+    result.push_str("M=D\n");
+    // Set THAT
+    result.push_str(&format!("@{}\n", THAT));
+    result.push_str("D=A\n");
+    result.push_str("@THAT\n");
+    result.push_str("M=D\n");
 
     result
 }
