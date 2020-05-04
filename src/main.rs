@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
@@ -23,19 +23,13 @@ const ARG: usize = 768;
 const THIS: usize = 1024;
 const THAT: usize = 1280;
 
-fn compile_file(input_file_path: &Path, output_file_path: &Path) {
-    let lines = read_lines(input_file_path);
-    let input_file_name = match input_file_path.file_name() {
-        Some(name) => String::from(name.to_str().unwrap()),
-        None => panic!("Invalid file path"),
-    };
+fn compile_file(file_name: &String) -> (Vec<String>, Vec<String>) {
+    let file_path = Path::new(file_name);
+
+    let lines = read_lines(file_path);
 
     let mut output = Vec::new();
     let mut errors = Vec::new();
-
-    output.push(String::from("// Initialization code\n"));
-    output.push(gen_init_code());
-    output.push(String::from("\n"));
 
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -44,24 +38,22 @@ fn compile_file(input_file_path: &Path, output_file_path: &Path) {
             continue;
         };
 
-        let comment_line = format!("// {}\n", trimmed.clone());
-        let compiled_line = compile_line(index, trimmed.to_string(), input_file_name.clone());
+        let comment_line = format!("// {}\n", trimmed);
+        let compiled_line = compile_line(index, &trimmed.to_string(), file_name);
 
         match compiled_line {
             Ok(val) => output.push(format!("{}{}\n", comment_line, val)),
             Err(err) => errors.push(format!("Error on line {}:\n{}", index + 1, err)),
         };
-    }
+    };
 
-    write_lines(output_file_path, &output);
-
-    print_errors(&errors);
+    (output, errors)
 }
 
 fn read_lines(file_path: &Path) -> Vec<String> {
     let file = match File::open(file_path) {
         Ok(file) => file,
-        Err(err) => panic!("Couldn't open file: {}", err.to_string()),
+        Err(err) => panic!(format!("Couldn't open file: {}", err.to_string())),
     };
 
     let reader = io::BufReader::new(file);
@@ -72,7 +64,7 @@ fn read_lines(file_path: &Path) -> Vec<String> {
 fn write_lines(file_path: &Path, lines: &Vec<String>) {
     let file = match File::create(file_path) {
         Ok(file) => file,
-        Err(err) => panic!("Couldn't create file: {}", err.to_string()),
+        Err(err) => panic!(format!("Couldn't create file: {}", err.to_string())),
     };
 
     let mut writer = io::BufWriter::new(file);
@@ -80,18 +72,12 @@ fn write_lines(file_path: &Path, lines: &Vec<String>) {
     for line in lines {
         match writer.write(line.as_bytes()) {
             Ok(_) => (),
-            Err(err) => panic!("An error has occured: {}", err.to_string()),
+            Err(err) => panic!(format!("An error has occured: {}", err.to_string())),
         }
-    }
+    };
 }
 
-fn print_errors(errors: &Vec<String>) {
-    for error in errors {
-        println!("{}", error);
-    }
-}
-
-fn compile_line(index: usize, line: String, file_name: String) -> Result<String, String> {
+fn compile_line(index: usize, line: &String, file_name: &String) -> Result<String, String> {
     let fragments: Vec<&str> = line.split(" ").collect();
 
     let args = &fragments[1..];
@@ -112,7 +98,7 @@ fn compile_line(index: usize, line: String, file_name: String) -> Result<String,
     }
 }
 
-fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
+fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
     if args.len() != 2 {
         return Err(format!(
             "Syntax error: push takes two arguments, received {:?}",
@@ -226,7 +212,7 @@ fn compile_push(args: &[&str], file_name: String) -> Result<String, String> {
     }
 }
 
-fn compile_pop(args: &[&str], file_name: String) -> Result<String, String> {
+fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
     if args.len() != 2 {
         return Err(format!(
             "Syntax error: pop takes two arguments, received {:?}",
@@ -552,36 +538,61 @@ fn gen_push_to_sp_and_inc() -> String {
     result
 }
 
-fn gen_init_code() -> String {
-    let mut result = String::new();
+fn gen_init_code() -> Vec<String> {
+    let mut result = Vec::new();
+
+    result.push(String::from("// Initialisation code\n"));
 
     // Set SP
-    result.push_str(&format!("@{}\n", SP));
-    result.push_str("D=A\n");
-    result.push_str("@SP\n");
-    result.push_str("M=D\n");
+    result.push(format!("@{}\n", SP));
+    result.push(String::from("D=A\n"));
+    result.push(String::from("@SP\n"));
+    result.push(String::from("M=D\n"));
     // Set LCL
-    result.push_str(&format!("@{}\n", LCL));
-    result.push_str("D=A\n");
-    result.push_str("@LCL\n");
-    result.push_str("M=D\n");
+    result.push(format!("@{}\n", LCL));
+    result.push(String::from("D=A\n"));
+    result.push(String::from("@LCL\n"));
+    result.push(String::from("M=D\n"));
     // Set ARG
-    result.push_str(&format!("@{}\n", ARG));
-    result.push_str("D=A\n");
-    result.push_str("@ARG\n");
-    result.push_str("M=D\n");
+    result.push(format!("@{}\n", ARG));
+    result.push(String::from("D=A\n"));
+    result.push(String::from("@ARG\n"));
+    result.push(String::from("M=D\n"));
     // Set THIS
-    result.push_str(&format!("@{}\n", THIS));
-    result.push_str("D=A\n");
-    result.push_str("@THIS\n");
-    result.push_str("M=D\n");
+    result.push(format!("@{}\n", THIS));
+    result.push(String::from("D=A\n"));
+    result.push(String::from("@THIS\n"));
+    result.push(String::from("M=D\n"));
     // Set THAT
-    result.push_str(&format!("@{}\n", THAT));
-    result.push_str("D=A\n");
-    result.push_str("@THAT\n");
-    result.push_str("M=D\n");
+    result.push(format!("@{}\n", THAT));
+    result.push(String::from("D=A\n"));
+    result.push(String::from("@THAT\n"));
+    result.push(String::from("M=D\n"));
+
+    result.push(String::from("\n"));
 
     result
+}
+
+fn compile_dir(dir_name: &String) -> Vec<(String, (Vec<String>, Vec<String>))> {
+    let read_dir = match fs::read_dir(dir_name) {
+        Ok(dir) => dir,
+        Err(_) => panic!("An error has occured")
+    };
+
+    let vm_files = read_dir.filter_map(|file| match file {
+        Ok(file) => {
+            let file_name = file.file_name().to_string_lossy().into_owned();
+            if file_name.ends_with(".vm") {
+                Some(file_name)
+            } else {
+                None
+            }
+        },
+        Err(_) => None
+    });
+    
+    vm_files.map(|file| (file.clone(), compile_file(&format!("{}/{}", dir_name, file)))).collect()
 }
 
 fn main() {
@@ -590,15 +601,42 @@ fn main() {
     if args.len() != 2 {
         panic!("Usage: vmcomp <path>");
     };
+    
+    let target = &args[1];
 
-    if args[1].find(".vm").is_none() {
-        panic!("Please provide a .vm file");
+    let target_path = Path::new(target);
+
+    if !target_path.exists() {
+        panic!("Could not find specified path");
     };
 
-    let input_file_path = Path::new(&args[1]);
+    let output_name = format!("{}.asm", target);
+    let output_path = Path::new(&output_name);
 
-    let output_file_name = format!("{}.asm", &args[1]);
-    let output_file_path = Path::new(&output_file_name);
+    if target_path.is_dir() {
+        let compiled = compile_dir(target);
 
-    compile_file(input_file_path, output_file_path);
+        let mut output = Vec::from(gen_init_code());
+
+        compiled.iter().for_each(|(file, (lines, errors))| {
+            errors.iter().for_each(|error| println!("Error in file {}\n{}", file, error));
+            output.push(format!("// {}\n", file));
+            output.append(&mut lines.clone());
+        });
+
+        write_lines(output_path, &output);
+    } else {
+        if args[1].find(".vm").is_none() {
+            panic!("Please provide a .vm file or a directory");
+        };
+        
+        let (lines, errors) = compile_file(target);
+
+        errors.iter().for_each(|error| println!("{}", error));
+
+        let mut output = Vec::from(gen_init_code());
+        output.append(&mut lines.clone());
+
+        write_lines(output_path, &output);
+    };
 }
