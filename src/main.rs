@@ -23,8 +23,9 @@ const ARG: usize = 768;
 const THIS: usize = 1024;
 const THAT: usize = 1280;
 
-fn compile_file(file_name: &String) -> (Vec<String>, Vec<String>) {
-    let file_path = Path::new(file_name);
+fn compile_file(file_path: &String) -> (Vec<String>, Vec<String>) {
+    let file_path = Path::new(file_path);
+    let file_name = file_path.file_name().unwrap().to_string_lossy().into_owned();
 
     let lines = read_lines(file_path);
 
@@ -38,11 +39,15 @@ fn compile_file(file_name: &String) -> (Vec<String>, Vec<String>) {
             continue;
         };
 
-        let comment_line = format!("// {}\n", trimmed);
-        let compiled_line = compile_line(index, &trimmed.to_string(), file_name);
+        output.push(format!("// {}\n", trimmed));
+
+        let compiled_line = compile_line(index, &trimmed.to_string(), &file_name);
 
         match compiled_line {
-            Ok(val) => output.push(format!("{}{}\n", comment_line, val)),
+            Ok(mut line) => {
+                output.append(&mut line);
+                output.push(format!("\n"));
+            },
             Err(err) => errors.push(format!("Error on line {}:\n{}", index + 1, err)),
         };
     };
@@ -77,7 +82,7 @@ fn write_lines(file_path: &Path, lines: &Vec<String>) {
     };
 }
 
-fn compile_line(index: usize, line: &String, file_name: &String) -> Result<String, String> {
+fn compile_line(index: usize, line: &String, file_name: &String) -> Result<Vec<String>, String> {
     let fragments: Vec<&str> = line.split(" ").collect();
 
     let args = &fragments[1..];
@@ -94,17 +99,22 @@ fn compile_line(index: usize, line: &String, file_name: &String) -> Result<Strin
         "and" => compile_and(args),
         "or" => compile_or(args),
         "not" => compile_not(args),
+        "label" => compile_label(args, file_name),
+        "goto" => compile_goto(args, file_name),
+        "if-goto" => compile_if_goto(args, file_name),
         otherwise => Err(format!("Unsupported operation: {}", otherwise)),
     }
 }
 
-fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
+fn compile_push(args: &[&str], file_name: &String) -> Result<Vec<String>, String> {
     if args.len() != 2 {
         return Err(format!(
             "Syntax error: push takes two arguments, received {:?}",
             args
         ));
     };
+
+    let mut result = Vec::new();
 
     match args[0] {
         "local" | "argument" | "this" | "that" => {
@@ -124,18 +134,15 @@ fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
                 }
             };
 
-
-            let mut result = String::new();
-
             // Store offset in D
-            result.push_str(&format!("@{}\n", arg));
-            result.push_str("D=A\n");
+            result.push(format!("@{}\n", arg));
+            result.push(format!("D=A\n"));
             // Get value (RAM[pointer + offset]) in D
-            result.push_str(&format!("@{}\n", pointer));
-            result.push_str("A=M+D\n");
-            result.push_str("D=M\n");
+            result.push(format!("@{}\n", pointer));
+            result.push(format!("A=M+D\n"));
+            result.push(format!("D=M\n"));
 
-            result.push_str(&gen_push_to_sp_and_inc());
+            result.append(&mut gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -151,12 +158,11 @@ fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
                 return Err(format!("Syntax error: push temp argument must be between 0 and 7, received {}", arg));
             };
 
-            let mut result = String::new();
             // Get value in D
-            result.push_str(&format!("@{}\n", value));
-            result.push_str("D=M\n");
+            result.push(format!("@{}\n", value));
+            result.push(format!("D=M\n"));
             
-            result.push_str(&gen_push_to_sp_and_inc());
+            result.append(&mut gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -166,13 +172,11 @@ fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
             class_name.truncate(file_name.len() - 3);
 
             
-            let mut result = String::new();
-
             // Get Class.Arg in D
-            result.push_str(&format!("@{}.{}\n", class_name, arg));
-            result.push_str("D=M\n");
+            result.push(format!("@{}.{}\n", class_name, arg));
+            result.push(format!("D=M\n"));
             
-            result.push_str(&gen_push_to_sp_and_inc());
+            result.append(&mut gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -186,25 +190,23 @@ fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
                 },
                 Err(_) => return Err(format!("Syntax error: push pointer argument must be 0 or 1, received {}", arg)),
             };
-            let mut result = String::new();
 
             // Get value in D
-            result.push_str(&format!("@{}\n", this_or_that));
-            result.push_str("D=M\n");
+            result.push(format!("@{}\n", this_or_that));
+            result.push(format!("D=M\n"));
 
-            result.push_str(&gen_push_to_sp_and_inc());
+            result.append(&mut gen_push_to_sp_and_inc());
 
             Ok(result)
         }
         "constant" => {
             let arg = args[1];
-            let mut result = String::new();
 
             // Get constant in D
-            result.push_str(&format!("@{}\n", arg));
-            result.push_str("D=A\n");
+            result.push(format!("@{}\n", arg));
+            result.push(format!("D=A\n"));
             
-            result.push_str(&gen_push_to_sp_and_inc());
+            result.append(&mut gen_push_to_sp_and_inc());
 
             Ok(result)
         }
@@ -212,13 +214,15 @@ fn compile_push(args: &[&str], file_name: &String) -> Result<String, String> {
     }
 }
 
-fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
+fn compile_pop(args: &[&str], file_name: &String) -> Result<Vec<String>, String> {
     if args.len() != 2 {
         return Err(format!(
             "Syntax error: pop takes two arguments, received {:?}",
             args
         ));
     };
+
+    let mut result = Vec::new();
 
     match args[0] {
         "local" | "argument" | "this" | "that" => {
@@ -238,26 +242,24 @@ fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
                 }
             };
 
-            let mut result = String::new();
 
             // Store value in D
-            result.push_str("@SP\n");
-            result.push_str("A=M-1\n");
-            result.push_str("D=M\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("A=M-1\n"));
+            result.push(format!("D=M\n"));
 
             // Point M to correct memory location
-            result.push_str(&format!("@{}\n", pointer));
-            result.push_str("A=M\n");
+            result.push(format!("@{}\n", pointer));
+            result.push(format!("A=M\n"));
 
-            for _ in 0..arg {
-                result.push_str("A=A+1\n");
-            }
+            // Offset the pointer
+            (0..arg).for_each(|_| result.push(format!("A=A+1\n")));
 
             // Write to RAM[pointer + arg]
-            result.push_str("M=D\n");
+            result.push(format!("M=D\n"));
             // Decrement stack pointer
-            result.push_str("@SP\n");
-            result.push_str("M=M-1\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("M=M-1\n"));
 
             Ok(result)
         }
@@ -273,18 +275,16 @@ fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
                 return Err(format!("Syntax error: pop temp must be between 0 and 7, received {}", arg));
             };
 
-            let mut result = String::new();
-
             // Store value in D
-            result.push_str("@SP\n");
-            result.push_str("A=M-1\n");
-            result.push_str("D=M\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("A=M-1\n"));
+            result.push(format!("D=M\n"));
             // Write to RAM[value]
-            result.push_str(&format!("@{}\n", value));
-            result.push_str("M=D\n");
+            result.push(format!("@{}\n", value));
+            result.push(format!("M=D\n"));
             // Decrement stack pointer
-            result.push_str("@SP\n");
-            result.push_str("M=M-1\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("M=M-1\n"));
 
             Ok(result)
         }
@@ -293,19 +293,16 @@ fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
             let mut class_name = file_name.clone();
             class_name.truncate(file_name.len() - 3);
 
-
-            let mut result = String::new();
-
             // Store value in D
-            result.push_str(&format!("@SP\n"));
-            result.push_str("A=M-1\n");
-            result.push_str("D=M\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("A=M-1\n"));
+            result.push(format!("D=M\n"));
             // Write D to Class.Arg
-            result.push_str(&format!("@{}.{}\n", class_name, arg));
-            result.push_str("M=D\n");
+            result.push(format!("@{}.{}\n", class_name, arg));
+            result.push(format!("M=D\n"));
             // Decrement stack pointer
-            result.push_str("@SP\n");
-            result.push_str("M=M-1\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("M=M-1\n"));
 
             Ok(result)
         }
@@ -319,20 +316,17 @@ fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
                 },
                 Err(_) => return Err(format!("Syntax error: pop pointer argument must be an integer, received {}", arg)),
             };
-
-
-            let mut result = String::new();
             
             // Store value in D
-            result.push_str("@SP\n");
-            result.push_str("A=M-1\n");
-            result.push_str("D=M\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("A=M-1\n"));
+            result.push(format!("D=M\n"));
             // Write to correct memory location
-            result.push_str(&format!("@{}\n", this_or_that));
-            result.push_str("M=D\n");
+            result.push(format!("@{}\n", this_or_that));
+            result.push(format!("M=D\n"));
             // Decrement stack pointer
-            result.push_str("@SP\n");
-            result.push_str("M=M-1\n");
+            result.push(format!("@SP\n"));
+            result.push(format!("M=M-1\n"));
 
             Ok(result)
         }
@@ -340,7 +334,7 @@ fn compile_pop(args: &[&str], file_name: &String) -> Result<String, String> {
     }
 }
 
-fn compile_add(args: &[&str]) -> Result<String, String> {
+fn compile_add(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: add takes no argument, received {:?}",
@@ -351,7 +345,7 @@ fn compile_add(args: &[&str]) -> Result<String, String> {
     Ok(compile_binary_operation(BinaryArithmeticOperator::Add))
 }
 
-fn compile_sub(args: &[&str]) -> Result<String, String> {
+fn compile_sub(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: sub takes no argument, received {:?}",
@@ -362,7 +356,7 @@ fn compile_sub(args: &[&str]) -> Result<String, String> {
     Ok(compile_binary_operation(BinaryArithmeticOperator::Sub))
 }
 
-fn compile_neg(args: &[&str]) -> Result<String, String> {
+fn compile_neg(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: neg takes no argument, received {:?}",
@@ -370,23 +364,23 @@ fn compile_neg(args: &[&str]) -> Result<String, String> {
         ));
     };
 
-    let mut result = String::new();
+    let mut result = Vec::new();
     // Get value in D
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
-    result.push_str("D=M\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
+    result.push(format!("D=M\n"));
     // D = 0 - D (2's complement)
-    result.push_str("@0\n");
-    result.push_str("D=A-D\n");
+    result.push(format!("@0\n"));
+    result.push(format!("D=A-D\n"));
     // Store the result
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
-    result.push_str("M=D\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
+    result.push(format!("M=D\n"));
 
     Ok(result)
 }
 
-fn compile_eq(index: usize, args: &[&str]) -> Result<String, String> {
+fn compile_eq(index: usize, args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: eq takes no argument, received {:?}",
@@ -397,7 +391,7 @@ fn compile_eq(index: usize, args: &[&str]) -> Result<String, String> {
     Ok(compile_boolean_operation(index, BooleanOperator::Equal))
 }
 
-fn compile_gt(index: usize, args: &[&str]) -> Result<String, String> {
+fn compile_gt(index: usize, args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: gt takes no argument, received {:?}",
@@ -408,7 +402,7 @@ fn compile_gt(index: usize, args: &[&str]) -> Result<String, String> {
     Ok(compile_boolean_operation(index, BooleanOperator::GreaterThan))
 }
 
-fn compile_lt(index: usize, args: &[&str]) -> Result<String, String> {
+fn compile_lt(index: usize, args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: lt takes no argument, received {:?}",
@@ -419,7 +413,7 @@ fn compile_lt(index: usize, args: &[&str]) -> Result<String, String> {
     Ok(compile_boolean_operation(index, BooleanOperator::LesserThan))
 }
 
-fn compile_and(args: &[&str]) -> Result<String, String> {
+fn compile_and(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: and takes no argument, received {:?}",
@@ -430,7 +424,7 @@ fn compile_and(args: &[&str]) -> Result<String, String> {
     Ok(compile_binary_operation(BinaryArithmeticOperator::And))
 }
 
-fn compile_or(args: &[&str]) -> Result<String, String> {
+fn compile_or(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: or takes no argument, received {:?}",
@@ -441,7 +435,7 @@ fn compile_or(args: &[&str]) -> Result<String, String> {
     Ok(compile_binary_operation(BinaryArithmeticOperator::Or))
 }
 
-fn compile_not(args: &[&str]) -> Result<String, String> {
+fn compile_not(args: &[&str]) -> Result<Vec<String>, String> {
     if args.len() > 0 {
         return Err(format!(
             "Syntax error: not takes no argument, received {:?}",
@@ -449,17 +443,65 @@ fn compile_not(args: &[&str]) -> Result<String, String> {
         ));
     };
 
-    let mut result = String::new();
+    let mut result = Vec::new();
     // Point A to value
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
     // Value = not value
-    result.push_str("M=!M\n");
+    result.push(format!("M=!M\n"));
 
     Ok(result)
 }
 
-fn compile_binary_operation(operator: BinaryArithmeticOperator) -> String {
+fn compile_label(args: &[&str], file_name: &String) -> Result<Vec<String>, String> {
+    if args.len() != 1 {
+        return Err(format!("Syntax error: label takes one argument, received {:?}", args));
+    };
+
+    let mut class_name = file_name.clone();
+    class_name.truncate(file_name.len() - 3);
+
+    Ok(vec![format!("({}.{})\n", class_name, args[0])])
+}
+
+fn compile_goto(args: &[&str], file_name: &String) -> Result<Vec<String>, String> {
+    if args.len() != 1 {
+        return Err(format!("Syntax error: goto takes one argument, received {:?}", args));
+    };
+
+    let mut class_name = file_name.clone();
+    class_name.truncate(file_name.len() - 3);
+
+    let mut result = Vec::new();
+
+    result.push(format!("@{}.{}\n", class_name, args[0]));
+    result.push(format!("0;JMP\n"));
+
+    Ok(result)
+}
+
+fn compile_if_goto(args: &[&str], file_name: &String) -> Result<Vec<String>, String> {
+    if args.len() != 1 {
+        return Err(format!("Syntax error: if-goto takes one argument, received {:?}", args));
+    };
+
+    let mut class_name = file_name.clone();
+    class_name.truncate(file_name.len() - 3);
+
+    let mut result = Vec::new();
+
+    // Get the value on top of the stack
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@{}.{}\n", class_name, args[0]));
+    result.push(format!("D;JNE\n"));
+
+    Ok(result)
+}
+
+fn compile_binary_operation(operator: BinaryArithmeticOperator) -> Vec<String> {
     let op = match operator {
         BinaryArithmeticOperator::Add => "+",
         BinaryArithmeticOperator::Sub => "-",
@@ -467,73 +509,73 @@ fn compile_binary_operation(operator: BinaryArithmeticOperator) -> String {
         BinaryArithmeticOperator::Or => "|",
     };
 
-    let mut result = String::new();
+    let mut result = Vec::new();
 
     // Get y in D
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
-    result.push_str("D=M\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
+    result.push(format!("D=M\n"));
     // Point M to x
-    result.push_str("A=A-1\n");
+    result.push(format!("A=A-1\n"));
     // Perform operation and store the result (x op y)
-    result.push_str(&format!("M=M{}D\n", op));
+    result.push(format!("M=M{}D\n", op));
     // Decrement stack pointer
-    result.push_str("@SP\n");
-    result.push_str("M=M-1\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M-1\n"));
 
     result
 }
 
-fn compile_boolean_operation(index: usize, operator: BooleanOperator) -> String {
+fn compile_boolean_operation(index: usize, operator: BooleanOperator) -> Vec<String> {
     let op = match operator {
         BooleanOperator::GreaterThan => "JGT",
         BooleanOperator::LesserThan => "JLT",
         BooleanOperator::Equal => "JEQ",
     };
 
-    let mut result = String::new();
+    let mut result = Vec::new();
     
     // Get y in D
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
-    result.push_str("D=M\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
+    result.push(format!("D=M\n"));
     // M now points to x
-    result.push_str("A=A-1\n");
+    result.push(format!("A=A-1\n"));
     // Store diff in D (D = x - y)
-    result.push_str("D=M-D\n");
-    result.push_str(&format!("@TRUE{}\n", index));
+    result.push(format!("D=M-D\n"));
+    result.push(format!("@TRUE{}\n", index));
     // Jump to TRUE if x op y is true
-    result.push_str(&format!("D;{}\n", op));
+    result.push(format!("D;{}\n", op));
     // Set result (D) to zero (false)
-    result.push_str("D=0\n");
-    result.push_str(&format!("@ELSE{}\n", index));
-    result.push_str("0;JMP\n");
-    result.push_str(&format!("(TRUE{})\n", index));
+    result.push(format!("D=0\n"));
+    result.push(format!("@ELSE{}\n", index));
+    result.push(format!("0;JMP\n"));
+    result.push(format!("(TRUE{})\n", index));
     // Set result (D) to minus one (true)
-    result.push_str("D=-1\n");
-    result.push_str(&format!("(ELSE{})\n", index));
+    result.push(format!("D=-1\n"));
+    result.push(format!("(ELSE{})\n", index));
     // Save result in SP - 2 (overrides the first operand in the stack)
-    result.push_str("@SP\n");
-    result.push_str("A=M-1\n");
-    result.push_str("A=A-1\n");
-    result.push_str("M=D\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M-1\n"));
+    result.push(format!("A=A-1\n"));
+    result.push(format!("M=D\n"));
     // Decrement stack pointer
-    result.push_str("@SP\n");
-    result.push_str("M=M-1\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M-1\n"));
     
     result
 }
 
-fn gen_push_to_sp_and_inc() -> String {
-    let mut result = String::new();
+fn gen_push_to_sp_and_inc() -> Vec<String> {
+    let mut result = Vec::new();
 
     // Write to stack pointer
-    result.push_str("@SP\n");
-    result.push_str("A=M\n");
-    result.push_str("M=D\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
     // Increment stack pointer
-    result.push_str("@SP\n");
-    result.push_str("M=M+1\n");
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
 
     result
 }
@@ -541,35 +583,35 @@ fn gen_push_to_sp_and_inc() -> String {
 fn gen_init_code() -> Vec<String> {
     let mut result = Vec::new();
 
-    result.push(String::from("// Initialisation code\n"));
+    result.push(format!("// Initialisation code\n"));
 
     // Set SP
     result.push(format!("@{}\n", SP));
-    result.push(String::from("D=A\n"));
-    result.push(String::from("@SP\n"));
-    result.push(String::from("M=D\n"));
+    result.push(format!("D=A\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=D\n"));
     // Set LCL
     result.push(format!("@{}\n", LCL));
-    result.push(String::from("D=A\n"));
-    result.push(String::from("@LCL\n"));
-    result.push(String::from("M=D\n"));
+    result.push(format!("D=A\n"));
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=D\n"));
     // Set ARG
     result.push(format!("@{}\n", ARG));
-    result.push(String::from("D=A\n"));
-    result.push(String::from("@ARG\n"));
-    result.push(String::from("M=D\n"));
+    result.push(format!("D=A\n"));
+    result.push(format!("@ARG\n"));
+    result.push(format!("M=D\n"));
     // Set THIS
     result.push(format!("@{}\n", THIS));
-    result.push(String::from("D=A\n"));
-    result.push(String::from("@THIS\n"));
-    result.push(String::from("M=D\n"));
+    result.push(format!("D=A\n"));
+    result.push(format!("@THIS\n"));
+    result.push(format!("M=D\n"));
     // Set THAT
     result.push(format!("@{}\n", THAT));
-    result.push(String::from("D=A\n"));
-    result.push(String::from("@THAT\n"));
-    result.push(String::from("M=D\n"));
+    result.push(format!("D=A\n"));
+    result.push(format!("@THAT\n"));
+    result.push(format!("M=D\n"));
 
-    result.push(String::from("\n"));
+    result.push(format!("\n"));
 
     result
 }
@@ -613,18 +655,20 @@ fn main() {
     let output_name = format!("{}.asm", target);
     let output_path = Path::new(&output_name);
 
+    let mut output = Vec::from(gen_init_code());
+
     if target_path.is_dir() {
         let compiled = compile_dir(target);
 
-        let mut output = Vec::from(gen_init_code());
-
         compiled.iter().for_each(|(file, (lines, errors))| {
-            errors.iter().for_each(|error| println!("Error in file {}\n{}", file, error));
+            // Print errors
+            println!("In file {}\n", file);
+            errors.iter().for_each(|error| println!("{}\n", error));
+
+            // Add to output
             output.push(format!("// {}\n", file));
             output.append(&mut lines.clone());
         });
-
-        write_lines(output_path, &output);
     } else {
         if args[1].find(".vm").is_none() {
             panic!("Please provide a .vm file or a directory");
@@ -634,9 +678,9 @@ fn main() {
 
         errors.iter().for_each(|error| println!("{}", error));
 
-        let mut output = Vec::from(gen_init_code());
         output.append(&mut lines.clone());
-
-        write_lines(output_path, &output);
     };
+
+    // Write output to file
+    write_lines(output_path, &output);
 }

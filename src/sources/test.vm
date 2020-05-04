@@ -1,0 +1,3 @@
+label c
+push constant 1
+if-goto c
