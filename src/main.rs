@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
+use regex;
 
 enum BinaryArithmeticOperator {
     Add,
@@ -35,7 +36,7 @@ fn compile_file(file_path: &String) -> (Vec<String>, Vec<String>) {
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        if trimmed.len() == 0 {
+        if trimmed.len() == 0 || trimmed.starts_with("//") {
             continue;
         };
 
@@ -83,7 +84,10 @@ fn write_lines(file_path: &Path, lines: &Vec<String>) {
 }
 
 fn compile_line(index: usize, line: &String, file_name: &String) -> Result<Vec<String>, String> {
-    let fragments: Vec<&str> = line.split(" ").collect();
+    let fragments: Vec<&str> = regex::Regex::new(" +").unwrap()
+        .split(line)
+        .take_while(|arg| !arg.starts_with("//"))
+        .map(|arg| arg.trim()).collect();
 
     let args = &fragments[1..];
 
@@ -102,6 +106,9 @@ fn compile_line(index: usize, line: &String, file_name: &String) -> Result<Vec<S
         "label" => compile_label(args, file_name),
         "goto" => compile_goto(args, file_name),
         "if-goto" => compile_if_goto(args, file_name),
+        "function" => compile_function(args),
+        "call" => compile_call(index, args),
+        "return" => compile_return(),
         otherwise => Err(format!("Unsupported operation: {}", otherwise)),
     }
 }
@@ -475,6 +482,7 @@ fn compile_goto(args: &[&str], file_name: &String) -> Result<Vec<String>, String
     let mut result = Vec::new();
 
     result.push(format!("@{}.{}\n", class_name, args[0]));
+    // Unconditional jump
     result.push(format!("0;JMP\n"));
 
     Ok(result)
@@ -490,13 +498,186 @@ fn compile_if_goto(args: &[&str], file_name: &String) -> Result<Vec<String>, Str
 
     let mut result = Vec::new();
 
-    // Get the value on top of the stack
+    // Get the value on top of the stack in D
     result.push(format!("@SP\n"));
     result.push(format!("M=M-1\n"));
     result.push(format!("A=M\n"));
     result.push(format!("D=M\n"));
+    // Jump to label if the value is not 0
     result.push(format!("@{}.{}\n", class_name, args[0]));
     result.push(format!("D;JNE\n"));
+
+    Ok(result)
+}
+
+fn compile_call(index: usize, args: &[&str]) -> Result<Vec<String>, String> {
+    if args.len() != 2 {
+        return Err(format!("Syntax error: call takes two arguments, received {:?}", args));
+    };
+
+    let func_name = args[0];
+    let param_count = match args[1].parse::<u8>() {
+        Ok(val) => val,
+        Err(_) => return Err(format!("Syntax error: call second argument must be an integer, received {}", args[1])),
+    };
+
+    let mut result = Vec::new();
+
+    result.push(format!("@{}{}.ReturnAddress\n", index, func_name));
+    result.push(format!("D=A\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+
+    result.push(format!("@ARG\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+
+    result.push(format!("@THIS\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+
+    result.push(format!("@THAT\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+
+    result.push(format!("@SP\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@5\n"));
+    result.push(format!("D=D-A\n"));
+    result.push(format!("@{}\n", param_count));
+    result.push(format!("D=D-A\n"));
+    result.push(format!("@ARG\n"));
+    result.push(format!("M=D\n"));
+    
+    result.push(format!("@SP\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@{}\n", func_name));
+    result.push(format!("0;JMP\n"));
+    result.push(format!("({}{}.ReturnAddress)\n", index, func_name));
+
+    Ok(result)
+}
+
+fn compile_function(args: &[&str]) -> Result<Vec<String>, String> {
+    if args.len() != 2 {
+        return Err(format!("Syntax error: function takes two arguments, received {:?}", args));
+    };
+
+    if args[0].find(".").is_none() {
+        return Err(format!("Syntax error: function first argument must be class.name, received {}", args[0]))
+    }
+
+    let class_name = args[0];
+    let local_count = match args[1].parse::<u8>() {
+        Ok(val) => val,
+        Err(_) => return Err(format!("Syntax error: function second argument must be an integer, received {}", args[1]))
+    };
+
+    let mut result = Vec::new();
+
+    // Define a label for the function
+    result.push(format!("({})\n", class_name));
+    // Store local variables count in D
+    result.push(format!("@{}\n", local_count));
+    result.push(format!("D=A\n"));
+    // Set D values to 0 
+    result.push(format!("@{}.End\n", class_name));
+    result.push(format!("D;JEQ\n"));
+    result.push(format!("({}.Loop)\n", class_name));
+    result.push(format!("@SP\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=0\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M+1\n"));
+    result.push(format!("@{}.Loop\n", class_name));
+    result.push(format!("D=D-1;JNE\n"));
+    result.push(format!("({}.End)\n", class_name));
+    
+    Ok(result)
+}
+
+fn compile_return() -> Result<Vec<String>, String> {
+    let mut result = Vec::new();
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("D=M\n"));
+
+    result.push(format!("@5\n"));
+    result.push(format!("A=D-A\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@13\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@SP\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@ARG\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@ARG\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@SP\n"));
+    result.push(format!("M=D+1\n"));
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@THAT\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@THIS\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@ARG\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=M-1\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("D=M\n"));
+    result.push(format!("@LCL\n"));
+    result.push(format!("M=D\n"));
+
+    result.push(format!("@13\n"));
+    result.push(format!("A=M\n"));
+    result.push(format!("0;JMP\n"));
 
     Ok(result)
 }
