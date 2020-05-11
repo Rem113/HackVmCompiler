@@ -792,6 +792,13 @@ fn gen_init_code() -> Vec<String> {
     result.push(format!("@THAT\n"));
     result.push(format!("M=D\n"));
 
+    let mut sys_init_call = match compile_call(0, &["Sys.init", "0"]) {
+        Ok(val) => val,
+        Err(_) => panic!("An error has occured"),
+    };
+
+    result.append(&mut sys_init_call);
+
     result.push(format!("\n"));
 
     result
@@ -843,8 +850,10 @@ fn main() {
 
         compiled.iter().for_each(|(file, (lines, errors))| {
             // Print errors
-            println!("In file {}\n", file);
-            errors.iter().for_each(|error| println!("{}\n", error));
+            if !errors.is_empty() {
+                println!("In file {}\n", file);
+                errors.iter().for_each(|error| println!("{}\n", error));
+            }
 
             // Add to output
             output.push(format!("// {}\n", file));
